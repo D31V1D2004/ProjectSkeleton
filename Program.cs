@@ -1,5 +1,7 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Silk.NET.SDL;
+using TheAdventure.Game;
+using TheAdventure.UI;
 
 namespace TheAdventure;
 
@@ -7,230 +9,168 @@ public static class Program
 {
     public static void Main()
     {
-        var sdl = new Sdl(new SdlContext());
+        var scores = HighScoreService.LoadAsync().GetAwaiter().GetResult();
+        var game   = new BlackjackGame(scores);
+        var sdl    = new Sdl(new SdlContext());
 
-        UInt64 framesRenderedCounter = 0;
-        var timer = new Stopwatch();
-
-        ReadOnlySpan<byte> keyboardState;
-        unsafe
-        {
-            keyboardState = new(sdl.GetKeyboardState(null), (int)KeyCode.Count);
-        }
-
-        Span<byte> mouseButtonStates = stackalloc byte[(int)MouseButton.Count];
-
-        var ev = new Event();
-
-        var sdlInitResult = sdl.Init(Sdl.InitVideo | Sdl.InitAudio | Sdl.InitEvents | Sdl.InitTimer | Sdl.InitGamecontroller |
-                                     Sdl.InitJoystick);
+        var sdlInitResult = sdl.Init(Sdl.InitVideo | Sdl.InitEvents | Sdl.InitTimer);
         if (sdlInitResult < 0)
-        {
             throw new InvalidOperationException("Failed to initialize SDL.");
-        }
 
         IntPtr window;
         unsafe
         {
             window = (IntPtr)sdl.CreateWindow(
-                "The Adventure", Sdl.WindowposUndefined, Sdl.WindowposUndefined, 800, 800,
+                "Blackjack",
+                Sdl.WindowposUndefined, Sdl.WindowposUndefined,
+                900, 700,
                 (uint)WindowFlags.Resizable | (uint)WindowFlags.AllowHighdpi
             );
-
             if (window == IntPtr.Zero)
-            {
-                var ex = sdl.GetErrorAsException();
-                if (ex != null)
-                {
-                    throw ex;
-                }
-
-                throw new Exception("Failed to create window.");
-            }
+                throw sdl.GetErrorAsException() ?? new Exception("Failed to create window.");
         }
 
-        IntPtr renderer;
+        // Set window icon (16x16 card icon drawn as raw pixels)
+        SetWindowIcon(sdl, window);
+
+        IntPtr rendererPtr;
         unsafe
         {
-            renderer = (IntPtr)sdl.CreateRenderer((Window*)window, -1, (uint)RendererFlags.Accelerated);
-            sdl.RenderSetVSync((Renderer*)renderer, 1);
+            rendererPtr = (IntPtr)sdl.CreateRenderer(
+                (Window*)window, -1, (uint)RendererFlags.Accelerated);
+            sdl.RenderSetVSync((Renderer*)rendererPtr, 1);
         }
 
-        if (renderer == IntPtr.Zero)
-        {
-            var ex = sdl.GetErrorAsException();
-            if (ex != null)
-            {
-                throw ex;
-            }
+        if (rendererPtr == IntPtr.Zero)
+            throw sdl.GetErrorAsException() ?? new Exception("Failed to create renderer.");
 
-            throw new Exception("Failed to create renderer.");
-        }
+        GameRenderer renderer;
+        unsafe { renderer = new GameRenderer(sdl, (Renderer*)rendererPtr); }
 
-        var startX = 100;
-        var startY = 100;
-        var endX = 200;
-        var endY = 200;
-
+        var ev   = new Event();
         bool quit = false;
+
         while (!quit)
         {
             while (sdl.PollEvent(ref ev) != 0)
             {
-                if (ev.Type == (uint)EventType.Quit)
+                switch ((EventType)ev.Type)
                 {
-                    quit = true;
-                    break;
-                }
-
-                switch (ev.Type)
-                {
-                    case (uint)EventType.Windowevent:
-                    {
-                        switch (ev.Window.Event)
-                        {
-                            case (byte)WindowEventID.Shown:
-                            case (byte)WindowEventID.Exposed:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.Hidden:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.Moved:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.SizeChanged:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.Minimized:
-                            case (byte)WindowEventID.Maximized:
-                            case (byte)WindowEventID.Restored:
-                                break;
-                            case (byte)WindowEventID.Enter:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.Leave:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.FocusGained:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.FocusLost:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.Close:
-                            {
-                                break;
-                            }
-                            case (byte)WindowEventID.TakeFocus:
-                            {
-                                unsafe
-                                {
-                                    sdl.SetWindowInputFocus(sdl.GetWindowFromID(ev.Window.WindowID));
-                                }
-
-                                break;
-                            }
-                        }
-
+                    case EventType.Quit:
+                        quit = true;
                         break;
-                    }
-
-                    case (uint)EventType.Fingermotion:
-                    {
+                    case EventType.Mousebuttondown when ev.Button.Button == 1:
+                        HandleClick(game, renderer, ev.Button.X, ev.Button.Y);
                         break;
-                    }
-
-                    case (uint)EventType.Mousemotion:
-                    {
-                        if (keyboardState[(byte)KeyCode.LShift] > 0)
-                        {
-                            endX = ev.Motion.X;
-                            endY = ev.Motion.Y;
-                        }
-                        else
-                        {
-                            startX = ev.Motion.X;
-                            startY = ev.Motion.Y;
-                        }
-
+                    case EventType.Keydown:
+                        HandleKey(game, (KeyCode)ev.Key.Keysym.Scancode);
                         break;
-                    }
-
-                    case (uint)EventType.Fingerdown:
-                    {
-                        mouseButtonStates[(byte)MouseButton.Primary] = 1;
-                        break;
-                    }
-                    case (uint)EventType.Mousebuttondown:
-                    {
-                        mouseButtonStates[ev.Button.Button] = 1;
-                        break;
-                    }
-
-                    case (uint)EventType.Fingerup:
-                    {
-                        mouseButtonStates[(byte)MouseButton.Primary] = 0;
-                        break;
-                    }
-
-                    case (uint)EventType.Mousebuttonup:
-                    {
-                        mouseButtonStates[ev.Button.Button] = 0;
-                        break;
-                    }
-
-                    case (uint)EventType.Mousewheel:
-                    {
-                        break;
-                    }
-
-                    case (uint)EventType.Keyup:
-                    {
-                        break;
-                    }
-
-                    case (uint)EventType.Keydown:
-                    {
-                        Console.WriteLine($"Key down: {(KeyCode)ev.Key.Keysym.Scancode}");
-                        break;
-                    }
                 }
             }
 
-            var elapsed = timer.Elapsed;
-            timer.Restart();
-
-            // game.render(renderer, RenderEvent{ elapsed, framesRenderedCounter++ });
-            unsafe
-            {
-                var r = (Renderer *)renderer;
-
-                sdl.SetRenderDrawColor(r, 255, 255, 255, 255);
-                sdl.RenderClear(r);
-
-                sdl.SetRenderDrawColor(r, 255, 0, 0, 255);
-                sdl.RenderDrawLine(r, startX, startY, endX, endY);
-
-                sdl.RenderPresent(r);
-            }
-
-            ++framesRenderedCounter;
+            renderer.Render(game);
         }
+
+        renderer.Dispose();
+        scores.Dispose();
 
         unsafe
         {
+            sdl.DestroyRenderer((Renderer*)rendererPtr);
             sdl.DestroyWindow((Window*)window);
         }
 
         sdl.Quit();
+    }
+
+    private static unsafe void SetWindowIcon(Sdl sdl, IntPtr window)
+    {
+        // 16x16 RGBA icon: white card with red heart
+        const int size = 16;
+        uint[] pixels = new uint[size * size];
+
+        // Card background = white
+        uint white    = 0xFFFFFFFF;
+        uint red      = 0xFF0000FF; // ABGR in SDL
+        uint darkGray = 0xFF444444;
+        uint transpar = 0x00000000;
+
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = transpar;
+
+        // Card outline (14x14 centered)
+        for (int y = 1; y < 15; y++)
+            for (int x = 1; x < 15; x++)
+                pixels[y * size + x] = white;
+
+        // Border
+        for (int i = 1; i < 15; i++)
+        {
+            pixels[1  * size + i] = darkGray;
+            pixels[14 * size + i] = darkGray;
+            pixels[i  * size + 1] = darkGray;
+            pixels[i  * size + 14] = darkGray;
+        }
+
+        // Red spade shape in center (simplified as pixels)
+        int[] spadeRows = { 0b0000100, 0b0001110, 0b0011111, 0b0111111,
+                            0b1111111, 0b0111111, 0b0001110, 0b0001110 };
+        for (int row = 0; row < spadeRows.Length; row++)
+        {
+            for (int col = 0; col < 7; col++)
+            {
+                if ((spadeRows[row] & (1 << (6 - col))) != 0)
+                {
+                    int px = 5 + col;
+                    int py = 4 + row;
+                    if (px < 15 && py < 15)
+                        pixels[py * size + px] = red;
+                }
+            }
+        }
+
+        fixed (uint* pPixels = pixels)
+        {
+            var surface = sdl.CreateRGBSurfaceFrom(
+                pPixels, size, size, 32, size * 4,
+                0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+
+            if ((IntPtr)surface != IntPtr.Zero)
+            {
+                sdl.SetWindowIcon((Window*)window, surface);
+                sdl.FreeSurface(surface);
+            }
+        }
+    }
+
+    private static void HandleClick(BlackjackGame game, GameRenderer renderer, int x, int y)
+    {
+        foreach (var (btn, value) in renderer.ChipButtons)
+            if (btn.Contains(x, y)) { game.AddBet(value); return; }
+
+        if (renderer.BtnDeal.Contains(x, y))   { game.Deal();      return; }
+        if (renderer.BtnHit.Contains(x, y))    { game.Hit();       return; }
+        if (renderer.BtnStand.Contains(x, y))  { game.Stand();     return; }
+        if (renderer.BtnDouble.Contains(x, y)) { game.Double();    return; }
+        if (renderer.BtnClear.Contains(x, y))  { game.ClearBet();  return; }
+        if (renderer.BtnNext.Contains(x, y))   { game.NextRound(); return; }
+    }
+
+    private static void HandleKey(BlackjackGame game, KeyCode key)
+    {
+        switch (key)
+        {
+            case KeyCode.H: game.Hit();    break;
+            case KeyCode.S: game.Stand();  break;
+            case KeyCode.D: game.Double(); break;
+            case KeyCode.Return:
+                if (game.Phase == GamePhase.Betting)      game.Deal();
+                else if (game.Phase == GamePhase.RoundOver) game.NextRound();
+                break;
+            case KeyCode.Escape:   game.ClearBet();  break;
+            case KeyCode.One:      game.AddBet(5);   break;
+            case KeyCode.Two:      game.AddBet(25);  break;
+            case KeyCode.Three:    game.AddBet(100); break;
+            case KeyCode.Four:     game.AddBet(500); break;
+        }
     }
 }
