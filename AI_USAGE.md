@@ -21,7 +21,6 @@
 | `Game/HighScoreService.cs` | Entire file | Async/await JSON persistence with error handling. Marked inline with `// AI-generated`. |
 | `Game/Deck.cs` | `ShuffleExtensions.Shuffle<T>()` method | Generic Fisher-Yates shuffle algorithm. Marked inline with `// AI-generated`. |
 
-*(Note: Restul logicii de joc, input handling-ul, integrarea SDL2, și asamblarea componentelor au fost scrise și integrate manual, fiind doar asistate punctual de AI.)*
 
 ## Authorship Estimate
 
