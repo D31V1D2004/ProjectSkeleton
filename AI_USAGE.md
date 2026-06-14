@@ -21,7 +21,3 @@
 | `Game/HighScoreService.cs` | Entire file | Async/await JSON persistence with error handling. Marked inline with `// AI-generated`. |
 | `Game/Deck.cs` | `ShuffleExtensions.Shuffle<T>()` method | Generic Fisher-Yates shuffle algorithm. Marked inline with `// AI-generated`. |
 
-
-## Authorship Estimate
-
-Approximately 35-40% of committed C# source lines are AI-generated verbatim (primarily the font table, ellipse math, and the two methods listed above). All game state management, SDL2 rendering structure, UI layout, and player interaction logic was written by the student with AI used only as a reference and debugging aid.
